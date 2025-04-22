@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modo Trader - Roleta</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #111;
+      color: #f0f0f0;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 20px;
+      background: #1a1a1a;
+      border-radius: 12px;
+      box-shadow: 0 0 20px #000;
+    }
+
+    h1 {
+      text-align: center;
+      color: #00ffcc;
+      margin-bottom: 30px;
+    }
+
+    .section {
+      margin-bottom: 30px;
+    }
+
+    .section h2 {
+      color: #00ffcc;
+      margin-bottom: 10px;
+    }
+
+    .info-box {
+      background: #222;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .label {
+      font-weight: bold;
+      color: #ccc;
+    }
+
+    .value {
+      color: #0f0;
+    }
+
+    .button {
+      background: #00ffcc;
+      color: #111;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .button:hover {
+      background: #00ccaa;
+    }
+
+    .row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .col {
+      flex: 1;
+      min-width: 250px;
+    }
+
+    .chart-placeholder {
+      height: 200px;
+      background: #333;
+      border-radius: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #999;
+      font-style: italic;
+    }
+
+    .history {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Modo Trader - Roleta</h1>
+
+    <div class="section">
+      <h2>Status da Banca</h2>
+      <div class="row">
+        <div class="col info-box"><span class="label">Banca atual:</span><span class="value" id="banca">R$ 100,00</span></div>
+        <div class="col info-box"><span class="label">Meta diária:</span><span class="value">+10%</span></div>
+        <div class="col info-box"><span class="label">Stop loss:</span><span class="value">-10%</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Próxima Aposta</h2>
+      <div class="info-box"><span class="label">Sugestão da IA:</span><span class="value">13, 22, 31</span></div>
+      <div class="info-box"><span class="label">Valor por número:</span><span class="value" id="valor-aposta">R$ 2,00</span></div>
+      <button class="button" onclick="apostar()">Executar Aposta</button>
+    </div>
+
+    <div class="section">
+      <h2>Histórico</h2>
+      <div class="history" id="historico">
+        <!-- Histórico dinâmico -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let banca = 100.00;
+    const valorPorNumero = 2.00;
+    const numerosApostados = 3;
+    const ganhoPorAcerto = 12.00; // lucro típico por número acertado
+
+    function apostar() {
+      const apostaTotal = valorPorNumero * numerosApostados;
+      const numeroSorteado = Math.floor(Math.random() * 37); // números de 0 a 36
+      const numeros = [13, 22, 31];
+      let ganhou = numeros.includes(numeroSorteado);
+
+      let resultado = "";
+      if (ganhou) {
+        banca += ganhoPorAcerto - apostaTotal;
+        resultado = `Acertou! Número sorteado: ${numeroSorteado} | Lucro: R$ ${(ganhoPorAcerto - apostaTotal).toFixed(2)}`;
+      } else {
+        banca -= apostaTotal;
+        resultado = `Errou. Número sorteado: ${numeroSorteado} | Prejuízo: R$ ${apostaTotal.toFixed(2)}`;
+      }
+
+      document.getElementById("banca").innerText = `R$ ${banca.toFixed(2)}`;
+      const historico = document.getElementById("historico");
+      const linha = document.createElement("div");
+      linha.className = "info-box";
+      linha.innerHTML = `<span class="label">Rodada:</span> ${resultado}`;
+      historico.prepend(linha);
+    }
+  </script>
+</body>
+</html>
