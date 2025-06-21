@@ -81,6 +81,7 @@ class ModeloIAHistGB:
             return self.encoder.inverse_transform([np.argmax(proba)])[0]
         return None
 
+# --- FASTAPI APP CONFIG ---
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -89,17 +90,29 @@ def previsao_duzia():
     try:
         if not os.path.exists(HISTORICO_PATH):
             raise HTTPException(status_code=404, detail="Arquivo de histórico não encontrado.")
+
         with open(HISTORICO_PATH, "r") as f:
             historico = json.load(f)
-        if len(historico) < 21:
-            raise HTTPException(status_code=400, detail=f"Histórico muito curto: {len(historico)} entradas. Mínimo exigido: 21.")
+
+        if len(historico) < 25:
+            raise HTTPException(status_code=422, detail=f"Histórico insuficiente ({len(historico)} registros). Mínimo: 25.")
+
+        print(f"[INFO] Registros carregados: {len(historico)}")
+
         modelo = ModeloIAHistGB()
         modelo.treinar(historico)
+
         if not modelo.treinado:
-            raise HTTPException(status_code=500, detail="Modelo não foi treinado com sucesso.")
+            raise HTTPException(status_code=422, detail="Modelo não foi treinado.")
+
         previsao = modelo.prever(historico)
-        if previsao is None:
-            raise HTTPException(status_code=500, detail="Não foi possível gerar previsão.")
+        print(f"[INFO] Previsão: {previsao}")
+
         return {"duzia_prevista": previsao}
+
+    except HTTPException as http_err:
+        print(f"[HTTP ERROR] {http_err.detail}")
+        raise http_err
     except Exception as e:
+        print(f"[ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
