@@ -9,6 +9,13 @@ from sklearn.preprocessing import LabelEncoder
 
 HISTORICO_PATH = "historico_coluna_duzia.json"
 
+# --- Função para conversão segura de tipos numpy ---
+def to_python(obj):
+    if isinstance(obj, np.generic):
+        return obj.item()
+    return obj
+
+# --- Utilitário para identificar a dúzia ---
 def get_duzia(n):
     if n == 0:
         return 0
@@ -20,6 +27,7 @@ def get_duzia(n):
         return 3
     return None
 
+# --- Modelo de IA usando HistGradientBoosting ---
 class ModeloIAHistGB:
     def __init__(self, tipo="duzia", janela=20):
         self.tipo = tipo
@@ -108,7 +116,7 @@ def previsao_duzia():
         previsao = modelo.prever(historico)
         print(f"[INFO] Previsão: {previsao}")
 
-        return {"duzia_prevista": previsao}
+        return {"duzia_prevista": to_python(previsao)}
 
     except HTTPException as http_err:
         print(f"[HTTP ERROR] {http_err.detail}")
