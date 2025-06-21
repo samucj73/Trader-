@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
@@ -81,16 +81,24 @@ class ModeloIAHistGB:
             return self.encoder.inverse_transform([np.argmax(proba)])[0]
         return None
 
+# --- FASTAPI APP CONFIG ---
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/previsao-duzia")
 def previsao_duzia():
-    if not os.path.exists(HISTORICO_PATH):
-        return {"duzia_prevista": None}
-    with open(HISTORICO_PATH, "r") as f:
-        historico = json.load(f)
-    modelo = ModeloIAHistGB()
-    modelo.treinar(historico)
-    previsao = modelo.prever(historico)
-    return {"duzia_prevista": previsao}
+    try:
+        if not os.path.exists(HISTORICO_PATH):
+            raise HTTPException(status_code=404, detail="Arquivo de histórico não encontrado.")
+
+        with open(HISTORICO_PATH, "r") as f:
+            historico = json.load(f)
+
+        modelo = ModeloIAHistGB()
+        modelo.treinar(historico)
+        previsao = modelo.prever(historico)
+
+        return {"duzia_prevista": previsao}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
