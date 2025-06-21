@@ -6,14 +6,14 @@ import numpy as np
 from collections import Counter
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.preprocessing import LabelEncoder
+
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
 from captura_api import router as captura_router
 app.include_router(captura_router)
 
 HISTORICO_PATH = "historico_coluna_duzia.json"
-
-# ---------------------
-# Funções auxiliares
-# ---------------------
 
 def to_python(obj):
     if isinstance(obj, np.generic):
@@ -30,10 +30,6 @@ def get_duzia(n):
     elif 25 <= n <= 36:
         return 3
     return None
-
-# ---------------------
-# Classe IA
-# ---------------------
 
 class ModeloIAHistGB:
     def __init__(self, tipo="duzia", janela=20):
@@ -79,6 +75,7 @@ class ModeloIAHistGB:
         if X:
             X = np.array(X, dtype=np.float32)
             y = self.encoder.fit_transform(y)
+            from sklearn.ensemble import HistGradientBoostingClassifier
             self.modelo = HistGradientBoostingClassifier(max_iter=200, max_depth=5, random_state=42)
             self.modelo.fit(X, y)
             self.treinado = True
@@ -96,19 +93,8 @@ class ModeloIAHistGB:
             return self.encoder.inverse_transform([np.argmax(proba)])[0]
         return None
 
-# ---------------------
-# FASTAPI app
-# ---------------------
-
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
 modelo_global = ModeloIAHistGB()
 historico_global = []
-
-# ---------------------
-# Carregar e treinar na inicialização
-# ---------------------
 
 @app.on_event("startup")
 def carregar_e_treinar():
@@ -134,19 +120,13 @@ def carregar_e_treinar():
     else:
         print("[ERRO] Falha ao treinar modelo.")
 
-# ---------------------
-# Previsão via IA já treinada
-# ---------------------
-
 @app.get("/previsao-duzia")
 def previsao_duzia():
     try:
         if not modelo_global.treinado:
             raise HTTPException(status_code=503, detail="Modelo não está treinado.")
-
         previsao = modelo_global.prever(historico_global)
         return {"duzia_prevista": to_python(previsao)}
-
     except HTTPException as http_err:
         print(f"[HTTP ERROR] {http_err.detail}")
         raise http_err
@@ -154,22 +134,15 @@ def previsao_duzia():
         print(f"[ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
-# ---------------------
-# Endpoint manual para reprocessar modelo
-# ---------------------
-
 @app.post("/atualizar-modelo")
 def atualizar_modelo():
     try:
         if not os.path.exists(HISTORICO_PATH):
             raise HTTPException(status_code=404, detail="Arquivo de histórico não encontrado.")
-
         with open(HISTORICO_PATH, "r") as f:
             historico = json.load(f)
-
         if len(historico) < 5:
             raise HTTPException(status_code=422, detail="Histórico insuficiente.")
-
         modelo_global.treinar(historico)
         if modelo_global.treinado:
             global historico_global
@@ -177,6 +150,5 @@ def atualizar_modelo():
             return {"status": "Modelo atualizado com sucesso."}
         else:
             raise HTTPException(status_code=500, detail="Falha ao treinar o modelo.")
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar modelo: {str(e)}")
