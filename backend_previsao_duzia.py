@@ -6,6 +6,8 @@ import numpy as np
 from collections import Counter
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.preprocessing import LabelEncoder
+from captura_api import router as captura_router
+app.include_router(captura_router)
 
 HISTORICO_PATH = "historico_coluna_duzia.json"
 
