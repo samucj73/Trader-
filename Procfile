@@ -1,0 +1,1 @@
+web: uvicorn backend_previsao_duzia:app --host=0.0.0.0 --port=$PORT
