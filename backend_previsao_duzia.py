@@ -94,7 +94,7 @@ def previsao_duzia():
         with open(HISTORICO_PATH, "r") as f:
             historico = json.load(f)
 
-        if len(historico) < 25:
+        if len(historico) < 125:
             raise HTTPException(status_code=422, detail=f"Histórico insuficiente ({len(historico)} registros). Mínimo: 25.")
 
         print(f"[INFO] Registros carregados: {len(historico)}")
