@@ -9,13 +9,15 @@ from sklearn.preprocessing import LabelEncoder
 
 HISTORICO_PATH = "historico_coluna_duzia.json"
 
-# --- Função para conversão segura de tipos numpy ---
+# ---------------------
+# Funções auxiliares
+# ---------------------
+
 def to_python(obj):
     if isinstance(obj, np.generic):
         return obj.item()
     return obj
 
-# --- Utilitário para identificar a dúzia ---
 def get_duzia(n):
     if n == 0:
         return 0
@@ -27,7 +29,10 @@ def get_duzia(n):
         return 3
     return None
 
-# --- Modelo de IA usando HistGradientBoosting ---
+# ---------------------
+# Classe IA
+# ---------------------
+
 class ModeloIAHistGB:
     def __init__(self, tipo="duzia", janela=20):
         self.tipo = tipo
@@ -89,33 +94,55 @@ class ModeloIAHistGB:
             return self.encoder.inverse_transform([np.argmax(proba)])[0]
         return None
 
-# --- FASTAPI APP CONFIG ---
+# ---------------------
+# FASTAPI app
+# ---------------------
+
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+modelo_global = ModeloIAHistGB()
+historico_global = []
+
+# ---------------------
+# Carregar e treinar na inicialização
+# ---------------------
+
+@app.on_event("startup")
+def carregar_e_treinar():
+    global modelo_global, historico_global
+    print("[INIT] Carregando histórico e treinando modelo...")
+
+    if not os.path.exists(HISTORICO_PATH):
+        print(f"[ERRO] Arquivo não encontrado: {HISTORICO_PATH}")
+        return
+
+    with open(HISTORICO_PATH, "r") as f:
+        historico_global = json.load(f)
+
+    if len(historico_global) < 5:
+        print("[ERRO] Histórico insuficiente para treinar.")
+        return
+
+    modelo_global = ModeloIAHistGB()
+    modelo_global.treinar(historico_global)
+
+    if modelo_global.treinado:
+        print("[OK] Modelo treinado com sucesso.")
+    else:
+        print("[ERRO] Falha ao treinar modelo.")
+
+# ---------------------
+# Previsão via IA já treinada
+# ---------------------
 
 @app.get("/previsao-duzia")
 def previsao_duzia():
     try:
-        if not os.path.exists(HISTORICO_PATH):
-            raise HTTPException(status_code=404, detail="Arquivo de histórico não encontrado.")
+        if not modelo_global.treinado:
+            raise HTTPException(status_code=503, detail="Modelo não está treinado.")
 
-        with open(HISTORICO_PATH, "r") as f:
-            historico = json.load(f)
-
-        if len(historico) < 5:
-            raise HTTPException(status_code=422, detail=f"Histórico insuficiente ({len(historico)} registros). Mínimo: 5.")
-
-        print(f"[INFO] Registros carregados: {len(historico)}")
-
-        modelo = ModeloIAHistGB()
-        modelo.treinar(historico)
-
-        if not modelo.treinado:
-            raise HTTPException(status_code=422, detail="Modelo não foi treinado.")
-
-        previsao = modelo.prever(historico)
-        print(f"[INFO] Previsão: {previsao}")
-
+        previsao = modelo_global.prever(historico_global)
         return {"duzia_prevista": to_python(previsao)}
 
     except HTTPException as http_err:
@@ -124,3 +151,30 @@ def previsao_duzia():
     except Exception as e:
         print(f"[ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+# ---------------------
+# Endpoint manual para reprocessar modelo
+# ---------------------
+
+@app.post("/atualizar-modelo")
+def atualizar_modelo():
+    try:
+        if not os.path.exists(HISTORICO_PATH):
+            raise HTTPException(status_code=404, detail="Arquivo de histórico não encontrado.")
+
+        with open(HISTORICO_PATH, "r") as f:
+            historico = json.load(f)
+
+        if len(historico) < 5:
+            raise HTTPException(status_code=422, detail="Histórico insuficiente.")
+
+        modelo_global.treinar(historico)
+        if modelo_global.treinado:
+            global historico_global
+            historico_global = historico
+            return {"status": "Modelo atualizado com sucesso."}
+        else:
+            raise HTTPException(status_code=500, detail="Falha ao treinar o modelo.")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar modelo: {str(e)}")
