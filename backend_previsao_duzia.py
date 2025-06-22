@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import json
@@ -75,7 +76,6 @@ class ModeloIAHistGB:
         if X:
             X = np.array(X, dtype=np.float32)
             y = self.encoder.fit_transform(y)
-            from sklearn.ensemble import HistGradientBoostingClassifier
             self.modelo = HistGradientBoostingClassifier(max_iter=200, max_depth=5, random_state=42)
             self.modelo.fit(X, y)
             self.treinado = True
@@ -123,10 +123,22 @@ def carregar_e_treinar():
 @app.get("/previsao-duzia")
 def previsao_duzia():
     try:
-        if not modelo_global.treinado:
-            raise HTTPException(status_code=503, detail="Modelo não está treinado.")
+        global historico_global
+
+        if not os.path.exists(HISTORICO_PATH):
+            raise HTTPException(status_code=404, detail="Histórico não encontrado.")
+
+        with open(HISTORICO_PATH, "r") as f:
+            historico_global = json.load(f)
+
+        if len(historico_global) < 25:
+            raise HTTPException(status_code=422, detail="Histórico insuficiente.")
+
+        modelo_global.treinar(historico_global)
         previsao = modelo_global.prever(historico_global)
+
         return {"duzia_prevista": to_python(previsao)}
+
     except HTTPException as http_err:
         print(f"[HTTP ERROR] {http_err.detail}")
         raise http_err
@@ -158,11 +170,11 @@ def ver_historico():
     try:
         if not os.path.exists(HISTORICO_PATH):
             return {"erro": "Arquivo de histórico não encontrado."}
-        
+
         with open(HISTORICO_PATH, "r") as f:
             dados = json.load(f)
             return {"total": len(dados), "historico": dados}
-    
+
     except Exception as e:
         return {"erro": f"Falha ao ler o histórico: {str(e)}"}
 
