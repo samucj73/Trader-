@@ -27,6 +27,8 @@ def fetch_latest_result():
         timestamp = game_data.get("startedAt")
         lucky_numbers = [item["number"] for item in lucky_list]
 
+        print(f"[API] Número capturado: {number} | Timestamp: {timestamp}")
+
         return {
             "number": number,
             "color": color,
@@ -34,30 +36,43 @@ def fetch_latest_result():
             "lucky_numbers": lucky_numbers
         }
     except Exception as e:
-        logging.error(f"Erro ao buscar resultado da API: {e}")
+        logging.error(f"[ERRO] Erro ao buscar resultado da API: {e}")
         return None
 
 def salvar_resultado_em_arquivo(novo_resultado, caminho=ARQUIVO_RESULTADOS):
-    dados_existentes = []
+    try:
+        dados_existentes = []
 
-    if os.path.exists(caminho):
-        with open(caminho, "r") as f:
-            try:
-                dados_existentes = json.load(f)
-            except json.JSONDecodeError:
-                logging.warning("Arquivo JSON vazio ou corrompido. Recriando arquivo.")
-                dados_existentes = []
+        # DEBUG: mostra o caminho absoluto
+        print(f"[DEBUG] Salvando em: {os.path.abspath(caminho)}")
 
-    timestamps_existentes = {item['timestamp'] for item in dados_existentes}
+        # Carrega dados existentes se o arquivo existir
+        if os.path.exists(caminho):
+            with open(caminho, "r") as f:
+                try:
+                    dados_existentes = json.load(f)
+                except json.JSONDecodeError:
+                    logging.warning("[AVISO] Arquivo JSON vazio ou corrompido. Recriando...")
+                    dados_existentes = []
 
-    if novo_resultado['timestamp'] not in timestamps_existentes:
-        dados_existentes.append(novo_resultado)
-        dados_existentes.sort(key=lambda x: x['timestamp'])
-        with open(caminho, "w") as f:
-            json.dump(dados_existentes, f, indent=2)
-        return {"status": "novo resultado salvo", "resultado": novo_resultado}
-    else:
-        return {"status": "resultado já existe", "timestamp": novo_resultado['timestamp']}
+        timestamps_existentes = {item.get("timestamp") for item in dados_existentes}
+
+        if novo_resultado.get("timestamp") not in timestamps_existentes:
+            dados_existentes.append(novo_resultado)
+            dados_existentes.sort(key=lambda x: x["timestamp"])
+
+            with open(caminho, "w") as f:
+                json.dump(dados_existentes, f, indent=2)
+
+            print(f"[OK] Novo resultado salvo com sucesso.")
+            return {"status": "novo resultado salvo", "resultado": novo_resultado}
+        else:
+            print(f"[INFO] Resultado repetido: {novo_resultado['timestamp']}")
+            return {"status": "resultado já existe", "timestamp": novo_resultado['timestamp']}
+
+    except Exception as e:
+        logging.error(f"[ERRO] Falha ao salvar resultado: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erro ao salvar resultado")
 
 @router.get("/capturar-resultado")
 def capturar_resultado():
