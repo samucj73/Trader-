@@ -4,6 +4,9 @@ from fastapi import APIRouter, HTTPException
 import os
 import json
 
+# 🔥 Importação Firebase
+from firebase_integration import salvar_resultado_firebase
+
 API_URL = "https://mute-grass-cc9b.samu-rcj.workers.dev/"
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
@@ -43,10 +46,8 @@ def salvar_resultado_em_arquivo(novo_resultado, caminho=ARQUIVO_RESULTADOS):
     try:
         dados_existentes = []
 
-        # DEBUG: mostra o caminho absoluto
         print(f"[DEBUG] Salvando em: {os.path.abspath(caminho)}")
 
-        # Carrega dados existentes se o arquivo existir
         if os.path.exists(caminho):
             with open(caminho, "r") as f:
                 try:
@@ -64,7 +65,11 @@ def salvar_resultado_em_arquivo(novo_resultado, caminho=ARQUIVO_RESULTADOS):
             with open(caminho, "w") as f:
                 json.dump(dados_existentes, f, indent=2)
 
-            print(f"[OK] Novo resultado salvo com sucesso.")
+            print(f"[OK] Novo resultado salvo com sucesso localmente.")
+
+            # 🔥 Salvar no Firebase também
+            salvar_resultado_firebase(novo_resultado)
+
             return {"status": "novo resultado salvo", "resultado": novo_resultado}
         else:
             print(f"[INFO] Resultado repetido: {novo_resultado['timestamp']}")
