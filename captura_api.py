@@ -8,7 +8,7 @@ API_URL = "https://mute-grass-cc9b.samu-rcj.workers.dev/"
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
-ARQUIVO_RESULTADOS = "historico_resultados.json"
+ARQUIVO_RESULTADOS = "historico_coluna_duzia.json"
 
 router = APIRouter()
 
