@@ -34,6 +34,10 @@ except Exception as e:
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+@app.get("/")
+def home():
+    return {"status": "API de previsão de dúzia ativa!"}
+
 # === Push Notification ===
 subscriptions = []
 VAPID_PRIVATE_KEY = "O88QYReBj0zIvlvnH3FoYygi45V1GKoC7JbAeuCB9T0"
@@ -56,7 +60,7 @@ def enviar_push_para_todos(mensagem):
                     "body": mensagem
                 }),
                 vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": "mailto:seu@email.com"}
+                vapid_claims={"sub": "mailto:exemplo@email.com"}
             )
             print("[PUSH] Notificação enviada.")
         except WebPushException as e:
@@ -111,7 +115,7 @@ class ModeloIAHistGB:
         return features
 
     def treinar(self, historico):
-        numeros = [h["number"] for h in historico if 0 <= h["number"] <= 36]
+        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
         X, y = [], []
         for i in range(self.janela, len(numeros) - 1):
             janela = numeros[i - self.janela:i + 1]
@@ -128,9 +132,14 @@ class ModeloIAHistGB:
             joblib.dump(self, MODELO_PATH)
 
     def prever(self, historico):
-        if not self.treinado: return None
-        numeros = [h["number"] for h in historico if 0 <= h["number"] <= 36]
-        if len(numeros) < self.janela + 1: return None
+        if not self.treinado:
+            print("[IA] Modelo ainda não treinado.")
+            return None
+        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+        print(f"[IA] Total de números válidos para previsão: {len(numeros)}")
+        if len(numeros) < self.janela + 1:
+            print("[IA] Números válidos insuficientes para previsão.")
+            return None
         janela = numeros[-(self.janela + 1):]
         entrada = np.array([self.construir_features(janela)], dtype=np.float32)
         proba = self.modelo.predict_proba(entrada)[0]
@@ -142,7 +151,6 @@ class ModeloIAHistGB:
 modelo_global = ModeloIAHistGB()
 historico_global = []
 
-# === Carregar histórico ===
 def carregar_historico():
     try:
         if firebase_db:
@@ -157,61 +165,66 @@ def carregar_historico():
         print(f"[ERRO] Falha ao carregar histórico: {e}")
         return []
 
-# === Salvar resultado ===
 def salvar_no_firebase(resultado):
     try:
         if firebase_db:
-            firebase_db.collection(FIREBASE_COLLECTION).document(resultado["timestamp"]).set(resultado)
-            print("[FIREBASE] Resultado salvo no Firebase.")
+            doc_id = resultado["timestamp"]
+            doc_ref = firebase_db.collection(FIREBASE_COLLECTION).document(doc_id)
+            if not doc_ref.get().exists:
+                doc_ref.set(resultado)
+                print("[FIREBASE] Resultado salvo no Firebase.")
         else:
-            with open(HISTORICO_PATH, "r") as f:
-                dados = json.load(f)
+            dados = []
+            if os.path.exists(HISTORICO_PATH):
+                with open(HISTORICO_PATH, "r") as f:
+                    dados = json.load(f)
             if resultado["timestamp"] not in [d.get("timestamp") for d in dados]:
                 dados.append(resultado)
                 with open(HISTORICO_PATH, "w") as f2:
                     json.dump(dados, f2, indent=2)
     except Exception as e:
-        print(f"[ERRO] Falha ao salvar no Firebase: {e}")
+        print(f"[ERRO] Falha ao salvar resultado: {e}")
 
-# === Startup: carregar e treinar ===
 @app.on_event("startup")
 def startup():
     global historico_global, modelo_global
     historico_global = carregar_historico()
-    if len(historico_global) >= 25:
+    validos = [h for h in historico_global if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+    if len(validos) >= 25:
         try:
             if os.path.exists(MODELO_PATH):
                 modelo_global = joblib.load(MODELO_PATH)
                 modelo_global.treinado = True
                 print("[IA] Modelo carregado de disco.")
             else:
-                modelo_global.treinar(historico_global)
+                modelo_global.treinar(validos)
                 print("[IA] Modelo treinado novo.")
         except Exception as e:
             print(f"[ERRO] Falha ao carregar modelo: {e}")
     else:
-        print("[ERRO] Histórico insuficiente.")
+        print(f"[ERRO] Histórico insuficiente. Apenas {len(validos)} registros válidos.")
 
-# === Previsão da Dúzia com envio de push se mudar ===
 ultima_previsao = None
 
 @app.get("/previsao-duzia")
 def previsao_duzia():
     global historico_global, ultima_previsao
     novo_historico = carregar_historico()
-    if len(novo_historico) < 25:
-        raise HTTPException(status_code=422, detail="Histórico insuficiente.")
+    validos = [h for h in novo_historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+    if len(validos) < 25:
+        raise HTTPException(status_code=422, detail=f"Histórico insuficiente. Apenas {len(validos)} números válidos.")
     if len(novo_historico) != len(historico_global):
         print("[IA] Histórico atualizado, re-treinando...")
         modelo_global.treinar(novo_historico)
         historico_global = novo_historico
     nova = modelo_global.prever(historico_global)
-    if nova != ultima_previsao and nova is not None:
+    if nova is None:
+        raise HTTPException(status_code=422, detail="Falha ao gerar previsão.")
+    if nova != ultima_previsao:
         enviar_push_para_todos(f"Dúzia prevista: {nova}")
         ultima_previsao = nova
     return {"duzia_prevista": to_python(nova)}
 
-# === Ver histórico ===
 @app.get("/ver-historico")
 def ver_historico():
     try:
@@ -220,7 +233,6 @@ def ver_historico():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao ler histórico: {str(e)}")
 
-# === Captura automática ===
 from captura_api import fetch_latest_result
 
 async def loop_captura_automatica():
@@ -228,8 +240,9 @@ async def loop_captura_automatica():
         print("[AUTO] Capturando resultado automaticamente...")
         resultado = fetch_latest_result()
         if resultado:
-            salvar_no_firebase(resultado)
-        await asyncio.sleep(60)
+            if resultado["number"] is not None and 0 <= resultado["number"] <= 36:
+                salvar_no_firebase(resultado)
+        no await asyncio.sleep(60)
 
 @app.on_event("startup")
 async def iniciar_loop():
