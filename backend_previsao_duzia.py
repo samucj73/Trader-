@@ -1,12 +1,11 @@
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import json
-import os
-import numpy as np
+import json, os, numpy as np
 from collections import Counter
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.preprocessing import LabelEncoder
+import joblib
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -15,6 +14,7 @@ from captura_api import router as captura_router
 app.include_router(captura_router)
 
 HISTORICO_PATH = "historico_coluna_duzia.json"
+MODELO_PATH = "modelo_duzia.joblib"
 
 def to_python(obj):
     if isinstance(obj, np.generic):
@@ -45,7 +45,6 @@ class ModeloIAHistGB:
         atual = ultimos[-1]
         anteriores = ultimos[:-1]
         grupo = get_duzia(atual)
-
         features = [
             atual % 2,
             int(str(atual)[-1]),
@@ -76,7 +75,7 @@ class ModeloIAHistGB:
         if X:
             X = np.array(X, dtype=np.float32)
             y = self.encoder.fit_transform(y)
-            self.modelo = HistGradientBoostingClassifier(max_iter=200, max_depth=5, random_state=42)
+            self.modelo = HistGradientBoostingClassifier(max_iter=150, max_depth=5, random_state=42)
             self.modelo.fit(X, y)
             self.treinado = True
 
@@ -89,7 +88,8 @@ class ModeloIAHistGB:
         janela = numeros[-(self.janela + 1):]
         entrada = np.array([self.construir_features(janela)], dtype=np.float32)
         proba = self.modelo.predict_proba(entrada)[0]
-        if max(proba) >= 0.4:
+        print("📊 Probabilidades da IA:", proba)
+        if max(proba) >= 0.25:
             return self.encoder.inverse_transform([np.argmax(proba)])[0]
         return None
 
@@ -99,7 +99,7 @@ historico_global = []
 @app.on_event("startup")
 def carregar_e_treinar():
     global modelo_global, historico_global
-    print("[INIT] Carregando histórico e treinando modelo...")
+    print("[INIT] Carregando histórico e modelo...")
 
     if not os.path.exists(HISTORICO_PATH):
         print(f"[ERRO] Arquivo não encontrado: {HISTORICO_PATH}")
@@ -108,17 +108,25 @@ def carregar_e_treinar():
     with open(HISTORICO_PATH, "r") as f:
         historico_global = json.load(f)
 
-    if len(historico_global) < 5:
-        print("[ERRO] Histórico insuficiente para treinar.")
-        return
+    if os.path.exists(MODELO_PATH):
+        try:
+            modelo_carregado = joblib.load(MODELO_PATH)
+            if isinstance(modelo_carregado, ModeloIAHistGB):
+                modelo_carregado.treinado = True
+                modelo_global = modelo_carregado
+                print("[OK] Modelo carregado com sucesso.")
+                return
+        except Exception as e:
+            print(f"[ERRO] Falha ao carregar modelo salvo: {e}")
 
+    print("[INFO] Treinando novo modelo...")
     modelo_global = ModeloIAHistGB()
     modelo_global.treinar(historico_global)
-
     if modelo_global.treinado:
-        print("[OK] Modelo treinado com sucesso.")
+        joblib.dump(modelo_global, MODELO_PATH)
+        print("[OK] Novo modelo treinado e salvo.")
     else:
-        print("[ERRO] Falha ao treinar modelo.")
+        print("[ERRO] Falha ao treinar novo modelo.")
 
 @app.get("/previsao-duzia")
 def previsao_duzia():
@@ -129,14 +137,19 @@ def previsao_duzia():
             raise HTTPException(status_code=404, detail="Histórico não encontrado.")
 
         with open(HISTORICO_PATH, "r") as f:
-            historico_global = json.load(f)
+            novo_historico = json.load(f)
 
-        if len(historico_global) < 25:
+        if len(novo_historico) < 25:
             raise HTTPException(status_code=422, detail="Histórico insuficiente.")
 
-        modelo_global.treinar(historico_global)
-        previsao = modelo_global.prever(historico_global)
+        if len(novo_historico) != len(historico_global):
+            print("[IA] Histórico mudou, re-treinando modelo...")
+            modelo_global.treinar(novo_historico)
+            historico_global = novo_historico
+            if modelo_global.treinado:
+                joblib.dump(modelo_global, MODELO_PATH)
 
+        previsao = modelo_global.prever(historico_global)
         return {"duzia_prevista": to_python(previsao)}
 
     except HTTPException as http_err:
@@ -146,38 +159,6 @@ def previsao_duzia():
         print(f"[ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
-@app.post("/atualizar-modelo")
-def atualizar_modelo():
-    try:
-        if not os.path.exists(HISTORICO_PATH):
-            raise HTTPException(status_code=404, detail="Arquivo de histórico não encontrado.")
-        with open(HISTORICO_PATH, "r") as f:
-            historico = json.load(f)
-        if len(historico) < 5:
-            raise HTTPException(status_code=422, detail="Histórico insuficiente.")
-        modelo_global.treinar(historico)
-        if modelo_global.treinado:
-            global historico_global
-            historico_global = historico
-            return {"status": "Modelo atualizado com sucesso."}
-        else:
-            raise HTTPException(status_code=500, detail="Falha ao treinar o modelo.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao atualizar modelo: {str(e)}")
-
-@app.get("/ver-historico")
-def ver_historico():
-    try:
-        if not os.path.exists(HISTORICO_PATH):
-            return {"erro": "Arquivo de histórico não encontrado."}
-
-        with open(HISTORICO_PATH, "r") as f:
-            dados = json.load(f)
-            return {"total": len(dados), "historico": dados}
-
-    except Exception as e:
-        return {"erro": f"Falha ao ler o histórico: {str(e)}"}
-
 import asyncio
 from captura_api import fetch_latest_result, salvar_resultado_em_arquivo
 
@@ -185,11 +166,9 @@ async def loop_captura_automatica():
     while True:
         print("[AUTO] Capturando resultado automaticamente...")
         resultado = fetch_latest_result()
-
         if resultado:
             salvar_resultado_em_arquivo(resultado)
 
-            # Carrega e limpa o histórico se houver dados artificiais
             if os.path.exists(HISTORICO_PATH):
                 with open(HISTORICO_PATH, "r") as f:
                     historico = json.load(f)
@@ -203,9 +182,9 @@ async def loop_captura_automatica():
                 global historico_global
                 historico_global = historico
                 modelo_global.treinar(historico)
-
                 if modelo_global.treinado:
-                    print("[AUTO] Modelo re-treinado com sucesso.")
+                    joblib.dump(modelo_global, MODELO_PATH)
+                    print("[AUTO] Modelo re-treinado e salvo.")
                 else:
                     print("[AUTO] Falha ao treinar modelo.")
 
