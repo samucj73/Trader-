@@ -242,7 +242,7 @@ async def loop_captura_automatica():
         if resultado:
             if resultado["number"] is not None and 0 <= resultado["number"] <= 36:
                 salvar_no_firebase(resultado)
-        no await asyncio.sleep(60)
+        await asyncio.sleep(60)
 
 @app.on_event("startup")
 async def iniciar_loop():
