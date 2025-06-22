@@ -185,9 +185,31 @@ async def loop_captura_automatica():
     while True:
         print("[AUTO] Capturando resultado automaticamente...")
         resultado = fetch_latest_result()
+
         if resultado:
             salvar_resultado_em_arquivo(resultado)
-        await asyncio.sleep(60)  # espera 60 segundos
+
+            # Carrega e limpa o histórico se houver dados artificiais
+            if os.path.exists(HISTORICO_PATH):
+                with open(HISTORICO_PATH, "r") as f:
+                    historico = json.load(f)
+
+                if len(historico) > 20 and all(h.get("number") == i + 1 for i, h in enumerate(historico[:45])):
+                    print("[LIMPEZA] Removendo entradas artificiais do início do histórico.")
+                    historico = historico[45:]
+                    with open(HISTORICO_PATH, "w") as f:
+                        json.dump(historico, f, indent=2)
+
+                global historico_global
+                historico_global = historico
+                modelo_global.treinar(historico)
+
+                if modelo_global.treinado:
+                    print("[AUTO] Modelo re-treinado com sucesso.")
+                else:
+                    print("[AUTO] Falha ao treinar modelo.")
+
+        await asyncio.sleep(60)
 
 @app.on_event("startup")
 async def iniciar_loop_background():
