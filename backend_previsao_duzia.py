@@ -152,3 +152,18 @@ def atualizar_modelo():
             raise HTTPException(status_code=500, detail="Falha ao treinar o modelo.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar modelo: {str(e)}")
+
+import asyncio
+from captura_api import fetch_latest_result, salvar_resultado_em_arquivo
+
+async def loop_captura_automatica():
+    while True:
+        print("[AUTO] Capturando resultado automaticamente...")
+        resultado = fetch_latest_result()
+        if resultado:
+            salvar_resultado_em_arquivo(resultado)
+        await asyncio.sleep(60)  # espera 60 segundos
+
+@app.on_event("startup")
+async def iniciar_loop_background():
+    asyncio.create_task(loop_captura_automatica())
