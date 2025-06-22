@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import json, os, numpy as np
 from collections import Counter
@@ -8,10 +8,10 @@ import joblib
 import asyncio
 import firebase_admin
 from firebase_admin import credentials, firestore
+from pywebpush import webpush, WebPushException
 
 # === Firebase ===
 FIREBASE_COLLECTION = "resultados_duzia"
-
 firebase_db = None
 try:
     if not firebase_admin._apps:
@@ -33,6 +33,34 @@ except Exception as e:
 # === FastAPI ===
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# === Push Notification ===
+subscriptions = []
+VAPID_PRIVATE_KEY = "O88QYReBj0zIvlvnH3FoYygi45V1GKoC7JbAeuCB9T0"
+VAPID_PUBLIC_KEY = "BGO8ScfswYI69ck8pCErweZVXygY6_pKvmxMB09nh0hW_oO-h3eZhxlMs3PMzAvdftvqTCe47do9AcvnWUJavMw"
+
+@app.post("/api/salvar-inscricao")
+async def salvar_inscricao(request: Request):
+    body = await request.json()
+    subscriptions.append(body)
+    print(f"[PUSH] Nova inscrição salva. Total: {len(subscriptions)}")
+    return {"status": "ok"}
+
+def enviar_push_para_todos(mensagem):
+    for sub in subscriptions:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=json.dumps({
+                    "title": "🔮 Nova previsão de Dúzia!",
+                    "body": mensagem
+                }),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": "mailto:seu@email.com"}
+            )
+            print("[PUSH] Notificação enviada.")
+        except WebPushException as e:
+            print("[ERRO] Falha ao enviar push:", repr(e))
 
 # === Arquivos locais ===
 HISTORICO_PATH = "historico_coluna_duzia.json"
@@ -164,10 +192,12 @@ def startup():
     else:
         print("[ERRO] Histórico insuficiente.")
 
-# === Previsão da Dúzia ===
+# === Previsão da Dúzia com envio de push se mudar ===
+ultima_previsao = None
+
 @app.get("/previsao-duzia")
 def previsao_duzia():
-    global historico_global
+    global historico_global, ultima_previsao
     novo_historico = carregar_historico()
     if len(novo_historico) < 25:
         raise HTTPException(status_code=422, detail="Histórico insuficiente.")
@@ -175,8 +205,11 @@ def previsao_duzia():
         print("[IA] Histórico atualizado, re-treinando...")
         modelo_global.treinar(novo_historico)
         historico_global = novo_historico
-    previsao = modelo_global.prever(historico_global)
-    return {"duzia_prevista": to_python(previsao)}
+    nova = modelo_global.prever(historico_global)
+    if nova != ultima_previsao and nova is not None:
+        enviar_push_para_todos(f"Dúzia prevista: {nova}")
+        ultima_previsao = nova
+    return {"duzia_prevista": to_python(nova)}
 
 # === Ver histórico ===
 @app.get("/ver-historico")
