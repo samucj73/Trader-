@@ -78,6 +78,7 @@ class ModeloIAHistGB:
             self.modelo = HistGradientBoostingClassifier(max_iter=150, max_depth=5, random_state=42)
             self.modelo.fit(X, y)
             self.treinado = True
+            joblib.dump(self, MODELO_PATH)
 
     def prever(self, historico):
         if not self.treinado:
@@ -119,14 +120,12 @@ def carregar_e_treinar():
         except Exception as e:
             print(f"[ERRO] Falha ao carregar modelo salvo: {e}")
 
-    print("[INFO] Treinando novo modelo...")
-    modelo_global = ModeloIAHistGB()
-    modelo_global.treinar(historico_global)
-    if modelo_global.treinado:
-        joblib.dump(modelo_global, MODELO_PATH)
-        print("[OK] Novo modelo treinado e salvo.")
+    if len(historico_global) >= 25:
+        modelo_global = ModeloIAHistGB()
+        modelo_global.treinar(historico_global)
+        print("[INFO] Novo modelo treinado.")
     else:
-        print("[ERRO] Falha ao treinar novo modelo.")
+        print("[ERRO] Histórico insuficiente para treinar.")
 
 @app.get("/previsao-duzia")
 def previsao_duzia():
@@ -146,8 +145,6 @@ def previsao_duzia():
             print("[IA] Histórico mudou, re-treinando modelo...")
             modelo_global.treinar(novo_historico)
             historico_global = novo_historico
-            if modelo_global.treinado:
-                joblib.dump(modelo_global, MODELO_PATH)
 
         previsao = modelo_global.prever(historico_global)
         return {"duzia_prevista": to_python(previsao)}
@@ -159,6 +156,19 @@ def previsao_duzia():
         print(f"[ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
+@app.get("/ver-historico")
+def ver_historico():
+    try:
+        if not os.path.exists(HISTORICO_PATH):
+            return {"erro": "Arquivo de histórico não encontrado."}
+
+        with open(HISTORICO_PATH, "r") as f:
+            dados = json.load(f)
+            return {"total": len(dados), "historico": dados}
+
+    except Exception as e:
+        return {"erro": f"Falha ao ler o histórico: {str(e)}"}
+
 import asyncio
 from captura_api import fetch_latest_result, salvar_resultado_em_arquivo
 
@@ -166,6 +176,7 @@ async def loop_captura_automatica():
     while True:
         print("[AUTO] Capturando resultado automaticamente...")
         resultado = fetch_latest_result()
+
         if resultado:
             salvar_resultado_em_arquivo(resultado)
 
@@ -176,8 +187,8 @@ async def loop_captura_automatica():
                 if len(historico) > 20 and all(h.get("number") == i + 1 for i, h in enumerate(historico[:45])):
                     print("[LIMPEZA] Removendo entradas artificiais do início do histórico.")
                     historico = historico[45:]
-                    with open(HISTORICO_PATH, "w") as f:
-                        json.dump(historico, f, indent=2)
+                    with open(HISTORICO_PATH, "w") as f2:
+                        json.dump(historico, f2, indent=2)
 
                 global historico_global
                 historico_global = historico
