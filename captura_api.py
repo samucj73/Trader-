@@ -4,8 +4,7 @@ from fastapi import APIRouter, HTTPException
 import os
 import json
 
-# 🔥 Importação Firebase
-from firebase_integration import salvar_resultado_firebase
+from firebase_integration import salvar_resultado_firebase  # 🔥 Integração Firebase
 
 API_URL = "https://mute-grass-cc9b.samu-rcj.workers.dev/"
 HEADERS = {
@@ -65,9 +64,9 @@ def salvar_resultado_em_arquivo(novo_resultado, caminho=ARQUIVO_RESULTADOS):
             with open(caminho, "w") as f:
                 json.dump(dados_existentes, f, indent=2)
 
-            print(f"[OK] Novo resultado salvo com sucesso localmente.")
+            print(f"[OK] Novo resultado salvo localmente.")
 
-            # 🔥 Salvar no Firebase também
+            # 🔥 Salvar também no Firestore
             salvar_resultado_firebase(novo_resultado)
 
             return {"status": "novo resultado salvo", "resultado": novo_resultado}
