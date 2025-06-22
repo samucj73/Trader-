@@ -10,13 +10,20 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # === Firebase ===
-FIREBASE_CRED_PATH = "firebase-adminsdk-fbsvc-2c717cb6fe.json"
 FIREBASE_COLLECTION = "resultados_duzia"
 
 firebase_db = None
 try:
     if not firebase_admin._apps:
-        cred = credentials.Certificate(FIREBASE_CRED_PATH)
+        firebase_cred_json = os.getenv("FIREBASE_CREDENTIAL_JSON")
+        if firebase_cred_json:
+            firebase_dict = json.loads(firebase_cred_json)
+            cred = credentials.Certificate(firebase_dict)
+            print("[FIREBASE] Inicializado com variável de ambiente.")
+        else:
+            FIREBASE_CRED_PATH = "firebase-adminsdk-fbsvc-2c717cb6fe.json"
+            cred = credentials.Certificate(FIREBASE_CRED_PATH)
+            print("[FIREBASE] Inicializado com arquivo local.")
         firebase_admin.initialize_app(cred)
         firebase_db = firestore.client()
         print("[FIREBASE] Conectado ao Firebase com sucesso.")
