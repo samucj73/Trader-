@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 import os
 import json
 
-API_URL = "https://api.casinoscores.com/svc-evolution-game-events/api/xxxtremelightningroulette/latest"
+API_URL = "https://mute-grass-cc9b.samu-rcj.workers.dev/"
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
