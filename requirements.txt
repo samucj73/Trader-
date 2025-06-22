@@ -1,6 +1,11 @@
+
+requests
+xgboost
 fastapi
 uvicorn
-requests
 scikit-learn
 numpy
-xgboost
+firebase-admin
+joblib
+python-multipart
+httpx
