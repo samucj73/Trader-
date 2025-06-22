@@ -153,6 +153,19 @@ def atualizar_modelo():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar modelo: {str(e)}")
 
+@app.get("/ver-historico")
+def ver_historico():
+    try:
+        if not os.path.exists(HISTORICO_PATH):
+            return {"erro": "Arquivo de histórico não encontrado."}
+        
+        with open(HISTORICO_PATH, "r") as f:
+            dados = json.load(f)
+            return {"total": len(dados), "historico": dados}
+    
+    except Exception as e:
+        return {"erro": f"Falha ao ler o histórico: {str(e)}"}
+
 import asyncio
 from captura_api import fetch_latest_result, salvar_resultado_em_arquivo
 
