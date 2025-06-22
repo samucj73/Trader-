@@ -4,9 +4,6 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 
-# Caminho para as credenciais do Firebase (renomeie se necessário)
-FIREBASE_CREDENTIAL_PATH = "firebase-adminsdk-fbsvc-2c717cb6fe.json"
-
 # Nome da coleção do Firestore onde os dados serão salvos
 FIREBASE_COLLECTION = "historico_roleta"
 
@@ -14,7 +11,13 @@ FIREBASE_COLLECTION = "historico_roleta"
 firebase_db = None
 if not firebase_admin._apps:
     try:
-        cred = credentials.Certificate(FIREBASE_CREDENTIAL_PATH)
+        # Tenta carregar as credenciais diretamente da variável de ambiente
+        firebase_json = os.environ.get("FIREBASE_CREDENTIAL_JSON")
+        if firebase_json is None:
+            raise ValueError("Variável de ambiente FIREBASE_CREDENTIAL_JSON não definida.")
+
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
         firebase_db = firestore.client()
         print("[FIREBASE] Conectado com sucesso ao Firestore.")
