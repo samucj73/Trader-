@@ -60,7 +60,7 @@ def enviar_push_para_todos(mensagem):
                     "body": mensagem
                 }),
                 vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": "mailto:exemplo@email.com"}
+                vapid_claims={"sub": "mailto:samu.rcj@gmail.com"}
             )
             print("[PUSH] Notificação enviada.")
         except WebPushException as e:
