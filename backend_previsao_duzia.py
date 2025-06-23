@@ -291,3 +291,8 @@ async def loop_captura_automatica():
 @app.on_event("startup")
 async def iniciar_loop():
     asyncio.create_task(loop_captura_automatica())
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend_previsao_duzia:app", host="0.0.0.0", port=port)
