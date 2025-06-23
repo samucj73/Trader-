@@ -87,6 +87,11 @@ def enviar_push_para_todos(mensagem):
     except Exception as e:
         print("[ERRO] Falha ao buscar inscrições:", e)
 
+@app.get("/api/enviar-teste")
+def enviar_teste():
+    enviar_push_para_todos("🧪 Esta é uma notificação de teste.")
+    return {"status": "ok"}
+
 # === Arquivos locais ===
 HISTORICO_PATH = "historico_coluna_duzia.json"
 MODELO_PATH = "modelo_duzia.joblib"
