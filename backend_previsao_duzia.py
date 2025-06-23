@@ -39,32 +39,53 @@ def home():
     return {"status": "API de previsão de dúzia ativa!"}
 
 # === Push Notification ===
-subscriptions = []
-VAPID_PRIVATE_KEY = "O88QYReBj0zIvlvnH3FoYygi45V1GKoC7JbAeuCB9T0"
-VAPID_PUBLIC_KEY = "BGO8ScfswYI69ck8pCErweZVXygY6_pKvmxMB09nh0hW_oO-h3eZhxlMs3PMzAvdftvqTCe47do9AcvnWUJavMw"
-
 @app.post("/api/salvar-inscricao")
 async def salvar_inscricao(request: Request):
+    if not firebase_db:
+        raise HTTPException(status_code=500, detail="Firebase não inicializado.")
+
     body = await request.json()
-    subscriptions.append(body)
-    print(f"[PUSH] Nova inscrição salva. Total: {len(subscriptions)}")
-    return {"status": "ok"}
+
+    # Salvar a inscrição no Firestore, evitando duplicatas
+    try:
+        docs = firebase_db.collection("subscriptions").where("endpoint", "==", body.get("endpoint")).stream()
+        if not any(True for _ in docs):  # Se não existe, insere
+            firebase_db.collection("subscriptions").add(body)
+            print("[PUSH] Nova inscrição salva no Firebase.")
+        else:
+            print("[PUSH] Inscrição já existe no Firebase.")
+        return {"status": "ok"}
+    except Exception as e:
+        print("[ERRO] Falha ao salvar inscrição:", e)
+        raise HTTPException(status_code=500, detail="Erro ao salvar inscrição no Firebase.")
 
 def enviar_push_para_todos(mensagem):
-    for sub in subscriptions:
-        try:
-            webpush(
-                subscription_info=sub,
-                data=json.dumps({
-                    "title": "🔮 Nova previsão de Dúzia!",
-                    "body": mensagem
-                }),
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": "mailto:samu.rcj@gmail.com"}
-            )
-            print("[PUSH] Notificação enviada.")
-        except WebPushException as e:
-            print("[ERRO] Falha ao enviar push:", repr(e))
+    if not firebase_db:
+        print("[ERRO] Firebase não está disponível.")
+        return
+
+    try:
+        docs = firebase_db.collection("subscriptions").stream()
+        total = 0
+        for doc in docs:
+            sub = doc.to_dict()
+            try:
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps({
+                        "title": "🔮 Nova previsão de Dúzia!",
+                        "body": mensagem
+                    }),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": "mailto:samu.rcj@gmail.com"}
+                )
+                print(f"[PUSH] Notificação enviada para {sub.get('endpoint')[:50]}...")
+                total += 1
+            except WebPushException as e:
+                print(f"[ERRO] Falha ao enviar push: {e}")
+        print(f"[PUSH] Total de notificações enviadas: {total}")
+    except Exception as e:
+        print("[ERRO] Falha ao buscar inscrições:", e)
 
 # === Arquivos locais ===
 HISTORICO_PATH = "historico_coluna_duzia.json"
