@@ -173,9 +173,6 @@ def salvar_no_firebase(resultado):
             if not doc_ref.get().exists:
                 doc_ref.set(resultado)
                 print("[FIREBASE] Resultado salvo no Firebase.")
-                return True  # indicativo que salvou novo dado
-            else:
-                return False
         else:
             dados = []
             if os.path.exists(HISTORICO_PATH):
@@ -185,33 +182,29 @@ def salvar_no_firebase(resultado):
                 dados.append(resultado)
                 with open(HISTORICO_PATH, "w") as f2:
                     json.dump(dados, f2, indent=2)
-                print("[LOCAL] Resultado salvo no arquivo local.")
-                return True
-            else:
-                return False
     except Exception as e:
         print(f"[ERRO] Falha ao salvar resultado: {e}")
-        return False
 
-async def atualizar_e_prever():
-    global historico_global, modelo_global, ultima_previsao
-    novo_historico = carregar_historico()
-    validos = [h for h in novo_historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
-    if len(validos) < 25:
-        print(f"[IA] Histórico insuficiente para previsão. Registros válidos: {len(validos)}")
-        return
-    if len(novo_historico) != len(historico_global):
-        print("[IA] Histórico atualizado, re-treinando modelo...")
-        modelo_global.treinar(novo_historico)
-        historico_global = novo_historico
-    previsao = modelo_global.prever(historico_global)
-    if previsao is None:
-        print("[IA] Falha ao gerar previsão.")
-        return
-    if previsao != ultima_previsao:
-        enviar_push_para_todos(f"Dúzia prevista: {previsao}")
-        ultima_previsao = previsao
-    print(f"[IA] Previsão enviada: {previsao}")
+@app.on_event("startup")
+def startup():
+    global historico_global, modelo_global
+    historico_global = carregar_historico()
+    validos = [h for h in historico_global if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+    if len(validos) >= 25:
+        try:
+            if os.path.exists(MODELO_PATH):
+                modelo_global = joblib.load(MODELO_PATH)
+                modelo_global.treinado = True
+                print("[IA] Modelo carregado de disco.")
+            else:
+                modelo_global.treinar(validos)
+                print("[IA] Modelo treinado novo.")
+        except Exception as e:
+            print(f"[ERRO] Falha ao carregar modelo: {e}")
+    else:
+        print(f"[ERRO] Histórico insuficiente. Apenas {len(validos)} registros válidos.")
+
+ultima_previsao = None
 
 @app.get("/previsao-duzia")
 def previsao_duzia():
@@ -243,16 +236,30 @@ def ver_historico():
 from captura_api import fetch_latest_result
 
 async def loop_captura_automatica():
+    global historico_global, ultima_previsao, modelo_global
     while True:
         print("[AUTO] Capturando resultado automaticamente...")
         resultado = fetch_latest_result()
-        if resultado and resultado["number"] is not None and 0 <= resultado["number"] <= 36:
-            novo = salvar_no_firebase(resultado)
-            if novo:
-                print("[AUTO] Novo resultado salvo, atualizando e prevendo...")
-                await atualizar_e_prever()
-            else:
-                print("[AUTO] Resultado já existe, sem atualização.")
+        if resultado:
+            if resultado["number"] is not None and 0 <= resultado["number"] <= 36:
+                salvar_no_firebase(resultado)
+                
+                novo_historico = carregar_historico()
+                validos = [h for h in novo_historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+                
+                if len(validos) >= 25:
+                    # Só atualiza e treina se histórico mudou
+                    if len(novo_historico) != len(historico_global):
+                        print("[IA] Histórico atualizado, re-treinando modelo...")
+                        modelo_global.treinar(novo_historico)
+                        historico_global = novo_historico
+                        
+                        nova = modelo_global.prever(historico_global)
+                        if nova is not None and nova != ultima_previsao:
+                            enviar_push_para_todos(f"Dúzia prevista: {nova}")
+                            ultima_previsao = nova
+                else:
+                    print(f"[ERRO] Histórico insuficiente para treinar: {len(validos)} números válidos.")
         await asyncio.sleep(60)
 
 @app.on_event("startup")
