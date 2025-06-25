@@ -294,5 +294,5 @@ async def iniciar_loop():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT"))
     uvicorn.run("backend_previsao_duzia:app", host="0.0.0.0", port=port)
