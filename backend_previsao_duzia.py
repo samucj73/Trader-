@@ -9,7 +9,6 @@ import asyncio
 import firebase_admin
 from firebase_admin import credentials, firestore
 from pywebpush import webpush, WebPushException
-from captura_api import fetch_latest_result
 
 # === Firebase ===
 FIREBASE_COLLECTION = "resultados_duzia"
@@ -39,58 +38,42 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 def home():
     return {"status": "API de previsão de dúzia ativa!"}
 
+# === Push Notification ===
+subscriptions = []
+VAPID_PRIVATE_KEY = "O88QYReBj0zIvlvnH3FoYygi45V1GKoC7JbAeuCB9T0"
+VAPID_PUBLIC_KEY = "BGO8ScfswYI69ck8pCErweZVXygY6_pKvmxMB09nh0hW_oO-h3eZhxlMs3PMzAvdftvqTCe47do9AcvnWUJavMw"
+
 @app.post("/api/salvar-inscricao")
 async def salvar_inscricao(request: Request):
-    if not firebase_db:
-        raise HTTPException(status_code=500, detail="Firebase não inicializado.")
     body = await request.json()
-    try:
-        docs = firebase_db.collection("subscriptions").where("endpoint", "==", body.get("endpoint")).stream()
-        if not any(True for _ in docs):
-            firebase_db.collection("subscriptions").add(body)
-            print("[PUSH] Nova inscrição salva no Firebase.")
-        else:
-            print("[PUSH] Inscrição já existe.")
-        return {"status": "ok"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Erro ao salvar inscrição.")
-
-def enviar_push_para_todos(mensagem):
-    if not firebase_db:
-        print("[ERRO] Firebase não disponível.")
-        return
-    VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
-    if not VAPID_PRIVATE_KEY:
-        print("[ERRO] VAPID_PRIVATE_KEY não definido.")
-        return
-    try:
-        docs = firebase_db.collection("subscriptions").stream()
-        for doc in docs:
-            sub = doc.to_dict()
-            try:
-                webpush(
-                    subscription_info=sub,
-                    data=json.dumps({"title": "🔮 Nova previsão de Dúzia!", "body": mensagem}),
-                    vapid_private_key=VAPID_PRIVATE_KEY,
-                    vapid_claims={"sub": "mailto:samu.rcj@gmail.com"}
-                )
-                print(f"[PUSH] Enviado para: {sub.get('endpoint')[:50]}...")
-            except WebPushException as e:
-                print(f"[ERRO] Falha ao enviar push: {e}")
-    except Exception as e:
-        print("[ERRO] Falha ao buscar inscrições:", e)
-
-@app.get("/api/enviar-teste")
-def enviar_teste():
-    enviar_push_para_todos("🧪 Esta é uma notificação de teste.")
+    subscriptions.append(body)
+    print(f"[PUSH] Nova inscrição salva. Total: {len(subscriptions)}")
     return {"status": "ok"}
 
-# === IA ===
+def enviar_push_para_todos(mensagem):
+    for sub in subscriptions:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=json.dumps({
+                    "title": "🔮 Nova previsão de Dúzia!",
+                    "body": mensagem
+                }),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": "mailto:samu.rcj@gmail.com"}
+            )
+            print("[PUSH] Notificação enviada.")
+        except WebPushException as e:
+            print("[ERRO] Falha ao enviar push:", repr(e))
+
+# === Arquivos locais ===
 HISTORICO_PATH = "historico_coluna_duzia.json"
 MODELO_PATH = "modelo_duzia.joblib"
 
+# === IA ===
 def to_python(obj):
-    if isinstance(obj, np.generic): return obj.item()
+    if isinstance(obj, np.generic):
+        return obj.item()
     return obj
 
 def get_duzia(n):
@@ -126,12 +109,13 @@ class ModeloIAHistGB:
             int(np.mean(anteriores) < atual),
             int(atual == 0),
             grupo,
-            Counter(get_duzia(n) for n in numeros[-20:]).get(grupo, 0)
         ]
+        freq = Counter(get_duzia(n) for n in numeros[-20:])
+        features.append(freq.get(grupo, 0))
         return features
 
     def treinar(self, historico):
-        numeros = [h["number"] for h in historico if isinstance(h["number"], int)]
+        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
         X, y = [], []
         for i in range(self.janela, len(numeros) - 1):
             janela = numeros[i - self.janela:i + 1]
@@ -148,18 +132,24 @@ class ModeloIAHistGB:
             joblib.dump(self, MODELO_PATH)
 
     def prever(self, historico):
-        if not self.treinado: return None
-        numeros = [h["number"] for h in historico if isinstance(h["number"], int)]
-        if len(numeros) < self.janela + 1: return None
-        entrada = np.array([self.construir_features(numeros[-(self.janela + 1):])], dtype=np.float32)
+        if not self.treinado:
+            print("[IA] Modelo ainda não treinado.")
+            return None
+        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+        print(f"[IA] Total de números válidos para previsão: {len(numeros)}")
+        if len(numeros) < self.janela + 1:
+            print("[IA] Números válidos insuficientes para previsão.")
+            return None
+        janela = numeros[-(self.janela + 1):]
+        entrada = np.array([self.construir_features(janela)], dtype=np.float32)
         proba = self.modelo.predict_proba(entrada)[0]
+        print("📊 Probabilidades da IA:", proba)
         if max(proba) >= 0.25:
             return self.encoder.inverse_transform([np.argmax(proba)])[0]
         return None
 
 modelo_global = ModeloIAHistGB()
 historico_global = []
-ultima_previsao = None
 
 def carregar_historico():
     try:
@@ -167,35 +157,69 @@ def carregar_historico():
             docs = firebase_db.collection(FIREBASE_COLLECTION).order_by("timestamp").stream()
             return [doc.to_dict() for doc in docs]
         elif os.path.exists(HISTORICO_PATH):
-            with open(HISTORICO_PATH) as f: return json.load(f)
-        return []
+            with open(HISTORICO_PATH) as f:
+                return json.load(f)
+        else:
+            return []
     except Exception as e:
-        print("[ERRO] Carregar histórico:", e)
+        print(f"[ERRO] Falha ao carregar histórico: {e}")
         return []
 
 def salvar_no_firebase(resultado):
     try:
         if firebase_db:
-            ref = firebase_db.collection(FIREBASE_COLLECTION).document(resultado["timestamp"])
-            if not ref.get().exists:
-                ref.set(resultado)
-                print("[FIREBASE] Resultado salvo.")
+            doc_id = resultado["timestamp"]
+            doc_ref = firebase_db.collection(FIREBASE_COLLECTION).document(doc_id)
+            if not doc_ref.get().exists:
+                doc_ref.set(resultado)
+                print("[FIREBASE] Resultado salvo no Firebase.")
+        else:
+            dados = []
+            if os.path.exists(HISTORICO_PATH):
+                with open(HISTORICO_PATH, "r") as f:
+                    dados = json.load(f)
+            if resultado["timestamp"] not in [d.get("timestamp") for d in dados]:
+                dados.append(resultado)
+                with open(HISTORICO_PATH, "w") as f2:
+                    json.dump(dados, f2, indent=2)
     except Exception as e:
-        print("[ERRO] Salvar resultado:", e)
+        print(f"[ERRO] Falha ao salvar resultado: {e}")
+
+@app.on_event("startup")
+def startup():
+    global historico_global, modelo_global
+    historico_global = carregar_historico()
+    validos = [h for h in historico_global if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+    if len(validos) >= 25:
+        try:
+            if os.path.exists(MODELO_PATH):
+                modelo_global = joblib.load(MODELO_PATH)
+                modelo_global.treinado = True
+                print("[IA] Modelo carregado de disco.")
+            else:
+                modelo_global.treinar(validos)
+                print("[IA] Modelo treinado novo.")
+        except Exception as e:
+            print(f"[ERRO] Falha ao carregar modelo: {e}")
+    else:
+        print(f"[ERRO] Histórico insuficiente. Apenas {len(validos)} registros válidos.")
+
+ultima_previsao = None
 
 @app.get("/previsao-duzia")
 def previsao_duzia():
     global historico_global, ultima_previsao
     novo_historico = carregar_historico()
-    validos = [h for h in novo_historico if isinstance(h["number"], int)]
+    validos = [h for h in novo_historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
     if len(validos) < 25:
-        raise HTTPException(status_code=422, detail="Histórico insuficiente.")
+        raise HTTPException(status_code=422, detail=f"Histórico insuficiente. Apenas {len(validos)} números válidos.")
     if len(novo_historico) != len(historico_global):
+        print("[IA] Histórico atualizado, re-treinando...")
         modelo_global.treinar(novo_historico)
         historico_global = novo_historico
     nova = modelo_global.prever(historico_global)
     if nova is None:
-        raise HTTPException(status_code=422, detail="Falha na previsão.")
+        raise HTTPException(status_code=422, detail="Falha ao gerar previsão.")
     if nova != ultima_previsao:
         enviar_push_para_todos(f"Dúzia prevista: {nova}")
         ultima_previsao = nova
@@ -203,40 +227,43 @@ def previsao_duzia():
 
 @app.get("/ver-historico")
 def ver_historico():
-    dados = carregar_historico()
-    return {"total": len(dados), "historico": dados}
+    try:
+        dados = carregar_historico()
+        return {"total": len(dados), "historico": dados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao ler histórico: {str(e)}")
+
+from captura_api import fetch_latest_result
 
 async def loop_captura_automatica():
-    global historico_global, ultima_previsao
+    global historico_global, ultima_previsao, modelo_global
     while True:
+        print("[AUTO] Capturando resultado automaticamente...")
         resultado = fetch_latest_result()
-        if resultado and isinstance(resultado["number"], int):
-            salvar_no_firebase(resultado)
-            novo_historico = carregar_historico()
-            validos = [h for h in novo_historico if isinstance(h["number"], int)]
-            if len(validos) >= 25:
-                if len(novo_historico) != len(historico_global):
-                    modelo_global.treinar(novo_historico)
-                    historico_global = novo_historico
-                    nova = modelo_global.prever(historico_global)
-                    if nova and nova != ultima_previsao:
-                        enviar_push_para_todos(f"Dúzia prevista: {nova}")
-                        ultima_previsao = nova
+        if resultado:
+            if resultado["number"] is not None and 0 <= resultado["number"] <= 36:
+                salvar_no_firebase(resultado)
+                
+                novo_historico = carregar_historico()
+                validos = [h for h in novo_historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+                
+                if len(validos) >= 25:
+                    # Só atualiza e treina se histórico mudou
+                    if len(novo_historico) != len(historico_global):
+                        print("[IA] Histórico atualizado, re-treinando modelo...")
+                        modelo_global.treinar(novo_historico)
+                        historico_global = novo_historico
+                        
+                        nova = modelo_global.prever(historico_global)
+                        if nova is not None and nova != ultima_previsao:
+                            enviar_push_para_todos(f"Dúzia prevista: {nova}")
+                            ultima_previsao = nova
+                else:
+                    print(f"[ERRO] Histórico insuficiente para treinar: {len(validos)} números válidos.")
         await asyncio.sleep(60)
 
 @app.on_event("startup")
-async def startup_geral():
-    global historico_global, modelo_global
-    historico_global = carregar_historico()
-    validos = [h for h in historico_global if isinstance(h["number"], int)]
-    if len(validos) >= 25:
-        if os.path.exists(MODELO_PATH):
-            modelo_global = joblib.load(MODELO_PATH)
-            modelo_global.treinado = True
-            print("[IA] Modelo carregado.")
-        else:
-            modelo_global.treinar(validos)
-            print("[IA] Modelo treinado.")
+async def iniciar_loop():
     asyncio.create_task(loop_captura_automatica())
 
 if __name__ == "__main__":
