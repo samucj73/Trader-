@@ -318,7 +318,7 @@ def ver_historico():
         raise HTTPException(status_code=500, detail=f"Erro ao ler histórico: {str(e)}")
 
 # === Loop automático ===
-    #async def loop_captura_automatica():
+    async def loop_captura_automatica():
     global historico_global, ultima_previsao, modelo_global
     while True:
         print("[AUTO] Capturando resultado automaticamente...")
@@ -334,7 +334,7 @@ def ver_historico():
                 if nova and nova != ultima_previsao:
                     enviar_push_para_todos(f"Dúzia prevista: {nova}")
                     ultima_previsao = nova
-      #  await asyncio.sleep(60)
+        await asyncio.sleep(60)
 
 # === Execução local ===
 if __name__ == "__main__":
