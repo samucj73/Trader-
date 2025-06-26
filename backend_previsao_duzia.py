@@ -117,7 +117,23 @@ class ModeloIAHistGB:
         self.encoder = LabelEncoder()
         self.treinado = False
         
-    def construir_features(self, numeros):
+    
+   
+
+    def treinar(self, historico):
+        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+        X, y = [], []
+        for i in range(self.janela, len(numeros) - 1):
+            janela = numeros[i - self.janela:i + 1]
+            target = get_duzia(numeros[i])
+            if target is not None:
+                X.append(self.construir_features(janela))
+                y.append(target)
+        if not X:
+            print("[IA] Dados insuficientes para treino.")
+            return
+
+        def construir_features(self, numeros):
     ultimos = numeros[-self.janela:]
     atual = ultimos[-1]
     anteriores = ultimos[:-1]
@@ -192,21 +208,7 @@ class ModeloIAHistGB:
     ]
 
     return features
-
-   
-
-    def treinar(self, historico):
-        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
-        X, y = [], []
-        for i in range(self.janela, len(numeros) - 1):
-            janela = numeros[i - self.janela:i + 1]
-            target = get_duzia(numeros[i])
-            if target is not None:
-                X.append(self.construir_features(janela))
-                y.append(target)
-        if not X:
-            print("[IA] Dados insuficientes para treino.")
-            return
+um
 
         X = np.array(X, dtype=np.float32)
         y = np.array(y)
