@@ -110,7 +110,7 @@ def get_duzia(n):
     return None
 
 class ModeloIAHistGB:
-    def __init__(self, tipo="duzia", janela=50):
+    def __init__(self, tipo="duzia", janela=250):
         self.tipo = tipo
         self.janela = janela
         self.modelo = None
