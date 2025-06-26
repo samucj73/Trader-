@@ -318,7 +318,7 @@ def ver_historico():
         raise HTTPException(status_code=500, detail=f"Erro ao ler histórico: {str(e)}")
 
 # === Loop automático ===
-async def loop_captura_automatica():
+# async def loop_captura_automatica():
     global historico_global, ultima_previsao, modelo_global
     while True:
         print("[AUTO] Capturando resultado automaticamente...")
