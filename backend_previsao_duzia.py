@@ -179,14 +179,45 @@ historico_global = []
 
 def carregar_historico():
     try:
+        registros = []
         if firebase_db:
             docs = firebase_db.collection(FIREBASE_COLLECTION).order_by("timestamp").stream()
-            return [doc.to_dict() for doc in docs]
+            for doc in docs:
+                dado = doc.to_dict()
+                if (
+                    isinstance(dado.get("number"), int)
+                    and 0 <= dado["number"] <= 36
+                    and "timestamp" in dado
+                ):
+                    registros.append(dado)
+                else:
+                    print(f"[IGNORADO] Registro inválido no Firebase: {dado}")
         elif os.path.exists(HISTORICO_PATH):
             with open(HISTORICO_PATH) as f:
-                return json.load(f)
-        else:
-            return []
+                dados = json.load(f)
+                for dado in dados:
+                    if (
+                        isinstance(dado.get("number"), int)
+                        and 0 <= dado["number"] <= 36
+                        and "timestamp" in dado
+                    ):
+                        registros.append(dado)
+                    else:
+                        print(f"[IGNORADO] Registro inválido no arquivo local: {dado}")
+
+        # Remover duplicatas por timestamp
+        visto = set()
+        historico_filtrado = []
+        for r in registros:
+            if r["timestamp"] not in visto:
+                visto.add(r["timestamp"])
+                historico_filtrado.append(r)
+            else:
+                print(f"[DUPLICATA] Ignorando registro com timestamp duplicado: {r['timestamp']}")
+
+        print(f"[HISTÓRICO] Registros válidos carregados: {len(historico_filtrado)}")
+        return historico_filtrado
+
     except Exception as e:
         print(f"[ERRO] Falha ao carregar histórico: {e}")
         return []
