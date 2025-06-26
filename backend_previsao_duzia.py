@@ -116,7 +116,7 @@ class ModeloIAHistGB:
         self.modelo = None
         self.encoder = LabelEncoder()
         self.treinado = False
-
+        
     def construir_features(self, numeros):
     ultimos = numeros[-self.janela:]
     atual = ultimos[-1]
