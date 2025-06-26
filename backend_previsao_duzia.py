@@ -121,23 +121,45 @@ class ModeloIAHistGB:
         ultimos = numeros[-self.janela:]
         atual = ultimos[-1]
         anteriores = ultimos[:-1]
-        grupo = get_duzia(atual)
+
+        def safe_get_duzia(n):
+            # Zero não pertence a nenhuma dúzia, retorna -1 para diferenciar
+            if n == 0:
+                return -1
+            return get_duzia(n)
+
+        grupo = safe_get_duzia(atual)
+
+        # Lag features - dúzia dos últimos 3 números, -1 se não existe
+        lag1 = safe_get_duzia(anteriores[-1]) if len(anteriores) >= 1 else -1
+        lag2 = safe_get_duzia(anteriores[-2]) if len(anteriores) >= 2 else -1
+        lag3 = safe_get_duzia(anteriores[-3]) if len(anteriores) >= 3 else -1
+
+        freq_20 = Counter(safe_get_duzia(n) for n in numeros[-20:])
+        freq_50 = Counter(safe_get_duzia(n) for n in numeros[-50:]) if len(numeros) >= 50 else freq_20
+
         features = [
             atual % 2,
-            int(str(atual)[-1]),
             atual % 3,
+            int(str(atual)[-1]),
             abs(atual - anteriores[-1]) if anteriores else 0,
             int(atual == anteriores[-1]) if anteriores else 0,
             1 if atual > anteriores[-1] else -1 if atual < anteriores[-1] else 0,
-            sum(1 for x in anteriores[-3:] if grupo == get_duzia(x)),
+            sum(1 for x in anteriores[-3:] if grupo == safe_get_duzia(x)),
             Counter(numeros[-30:]).get(atual, 0),
             int(atual in [n for n, _ in Counter(numeros[-30:]).most_common(5)]),
             int(np.mean(anteriores) < atual),
             int(atual == 0),
+
             grupo,
+
+            freq_20.get(grupo, 0),
+            freq_50.get(grupo, 0),
+
+            lag1,
+            lag2,
+            lag3,
         ]
-        freq = Counter(get_duzia(n) for n in numeros[-20:])
-        features.append(freq.get(grupo, 0))
         return features
 
     def treinar(self, historico):
@@ -149,30 +171,47 @@ class ModeloIAHistGB:
             if target is not None:
                 X.append(self.construir_features(janela))
                 y.append(target)
-        if X:
-            X = np.array(X, dtype=np.float32)
-            y = self.encoder.fit_transform(y)
-            self.modelo = HistGradientBoostingClassifier(max_iter=150, max_depth=5, random_state=42)
-            self.modelo.fit(X, y)
-            self.treinado = True
-            joblib.dump(self, MODELO_PATH)
+        if not X:
+            print("[IA] Dados insuficientes para treino.")
+            return
+
+        X = np.array(X, dtype=np.float32)
+        y = np.array(y)
+
+        # Encoder da variável alvo
+        y_enc = self.encoder.fit_transform(y)
+
+        # Split simples 80% treino, 20% teste
+        split_idx = int(0.8 * len(X))
+        X_train, X_test = X[:split_idx], X[split_idx:]
+        y_train, y_test = y_enc[:split_idx], y_enc[split_idx:]
+
+        self.modelo = HistGradientBoostingClassifier(max_iter=200, max_depth=7, random_state=42)
+        self.modelo.fit(X_train, y_train)
+        self.treinado = True
+
+        # Avaliação no teste
+        acc = self.modelo.score(X_test, y_test)
+        print(f"[IA] Modelo treinado. Acurácia no teste: {acc:.3f}")
+
+        joblib.dump(self, MODELO_PATH)
 
     def prever(self, historico):
         if not self.treinado:
             print("[IA] Modelo ainda não treinado.")
             return None
         numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
-        print(f"[IA] Total de números válidos para previsão: {len(numeros)}")
         if len(numeros) < self.janela + 1:
             print("[IA] Números válidos insuficientes para previsão.")
             return None
         janela = numeros[-(self.janela + 1):]
         entrada = np.array([self.construir_features(janela)], dtype=np.float32)
         proba = self.modelo.predict_proba(entrada)[0]
-        print("📊 Probabilidades da IA:", proba)
-        if max(proba) >= 0.25:
-            return self.encoder.inverse_transform([np.argmax(proba)])[0]
-        return None
+        print(f"📊 Probabilidades da IA: {proba}")
+
+        # Sempre retorna o top1 (maior probabilidade), independente do valor
+        pred = np.argmax(proba)
+        return self.encoder.inverse_transform([pred])[0]
 
 modelo_global = ModeloIAHistGB()
 historico_global = []
