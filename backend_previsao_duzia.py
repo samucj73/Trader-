@@ -334,7 +334,7 @@ def ver_historico():
                 if nova and nova != ultima_previsao:
                     enviar_push_para_todos(f"Dúzia prevista: {nova}")
                     ultima_previsao = nova
-        await asyncio.sleep(60)
+      #  await asyncio.sleep(60)
 
 # === Execução local ===
 if __name__ == "__main__":
