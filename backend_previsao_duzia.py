@@ -116,24 +116,8 @@ class ModeloIAHistGB:
         self.modelo = None
         self.encoder = LabelEncoder()
         self.treinado = False
-        
-    
-   
 
-    def treinar(self, historico):
-        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
-        X, y = [], []
-        for i in range(self.janela, len(numeros) - 1):
-            janela = numeros[i - self.janela:i + 1]
-            target = get_duzia(numeros[i])
-            if target is not None:
-                X.append(self.construir_features(janela))
-                y.append(target)
-        if not X:
-            print("[IA] Dados insuficientes para treino.")
-            return
-
-        def construir_features(self, numeros):
+    def construir_features(self, numeros):
     ultimos = numeros[-self.janela:]
     atual = ultimos[-1]
     anteriores = ultimos[:-1]
@@ -179,18 +163,18 @@ class ModeloIAHistGB:
     repete_duzia = int(grupo == safe_get_duzia(anteriores[-1])) if anteriores else 0
 
     features = [
-        atual % 2,                     # par ou ímpar
-        atual % 3,                     # divisível por 3
-        int(str(atual)[-1]),          # último dígito
-        abs(atual - anteriores[-1]) if anteriores else 0,  # diferença com anterior
-        int(atual == anteriores[-1]) if anteriores else 0, # repetiu número
-        1 if atual > anteriores[-1] else -1 if atual < anteriores[-1] else 0,  # direção
-        sum(1 for x in anteriores[-3:] if grupo == safe_get_duzia(x)),        # repetições de dúzia nos últimos 3
-        Counter(numeros[-30:]).get(atual, 0),                                  # frequência do número nos últimos 30
-        int(atual in [n for n, _ in Counter(numeros[-30:]).most_common(5)]),  # está entre os 5 mais comuns
-        int(np.mean(anteriores) < atual),                                     # acima da média
-        int(atual == 0),  # é zero
-        grupo,            # classe alvo para supervisão (duplicada como feature)
+        atual % 2,
+        atual % 3,
+        int(str(atual)[-1]),
+        abs(atual - anteriores[-1]) if anteriores else 0,
+        int(atual == anteriores[-1]) if anteriores else 0,
+        1 if atual > anteriores[-1] else -1 if atual < anteriores[-1] else 0,
+        sum(1 for x in anteriores[-3:] if grupo == safe_get_duzia(x)),
+        Counter(numeros[-30:]).get(atual, 0),
+        int(atual in [n for n, _ in Counter(numeros[-30:]).most_common(5)]),
+        int(np.mean(anteriores) < atual),
+        int(atual == 0),
+        grupo,
 
         # Novas features
         densidade_20,
@@ -208,10 +192,24 @@ class ModeloIAHistGB:
     ]
 
     return features
-um
+        
+    
+   
 
-        X = np.array(X, dtype=np.float32)
-        y = np.array(y)
+    def treinar(self, historico):
+        numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
+        X, y = [], []
+        for i in range(self.janela, len(numeros) - 1):
+            janela = numeros[i - self.janela:i + 1]
+            target = get_duzia(numeros[i])
+            if target is not None:
+                X.append(self.construir_features(janela))
+                y.append(target)
+        if not X:
+            print("[IA] Dados insuficientes para treino.")
+            return
+            X = np.array(X, dtype=np.float32)
+             y = np.array(y)
 
         # Encoder da variável alvo
         y_enc = self.encoder.fit_transform(y)
