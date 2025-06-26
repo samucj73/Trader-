@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: roleta-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend_previsao_duzia:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: FIREBASE_CREDENTIAL_JSON
+        value: '{{ INSIRA_AQUI_SEU_JSON_BASE64_ESCAPADO }}'
+      - key: VAPID_PRIVATE_KEY
+        value: '{{ SUA_CHAVE_PRIVADA_AQUI }}'
