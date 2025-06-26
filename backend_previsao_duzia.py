@@ -110,7 +110,7 @@ def get_duzia(n):
     return None
 
 class ModeloIAHistGB:
-    def __init__(self, tipo="duzia", janela=20):
+    def __init__(self, tipo="duzia", janela=50):
         self.tipo = tipo
         self.janela = janela
         self.modelo = None
@@ -118,49 +118,82 @@ class ModeloIAHistGB:
         self.treinado = False
 
     def construir_features(self, numeros):
-        ultimos = numeros[-self.janela:]
-        atual = ultimos[-1]
-        anteriores = ultimos[:-1]
+    ultimos = numeros[-self.janela:]
+    atual = ultimos[-1]
+    anteriores = ultimos[:-1]
 
-        def safe_get_duzia(n):
-            # Zero não pertence a nenhuma dúzia, retorna -1 para diferenciar
-            if n == 0:
-                return -1
-            return get_duzia(n)
+    def safe_get_duzia(n):
+        if n == 0:
+            return -1  # zero fora de qualquer dúzia
+        return get_duzia(n)
 
-        grupo = safe_get_duzia(atual)
+    grupo = safe_get_duzia(atual)
 
-        # Lag features - dúzia dos últimos 3 números, -1 se não existe
-        lag1 = safe_get_duzia(anteriores[-1]) if len(anteriores) >= 1 else -1
-        lag2 = safe_get_duzia(anteriores[-2]) if len(anteriores) >= 2 else -1
-        lag3 = safe_get_duzia(anteriores[-3]) if len(anteriores) >= 3 else -1
+    # Frequências das dúzias nos últimos 20 e 50
+    freq_20 = Counter(safe_get_duzia(n) for n in numeros[-20:])
+    freq_50 = Counter(safe_get_duzia(n) for n in numeros[-50:]) if len(numeros) >= 50 else freq_20
+    total_50 = sum(freq_50.values()) or 1
 
-        freq_20 = Counter(safe_get_duzia(n) for n in numeros[-20:])
-        freq_50 = Counter(safe_get_duzia(n) for n in numeros[-50:]) if len(numeros) >= 50 else freq_20
+    # Lags de dúzia anteriores (categorias codificadas)
+    lag1 = safe_get_duzia(anteriores[-1]) if len(anteriores) >= 1 else -1
+    lag2 = safe_get_duzia(anteriores[-2]) if len(anteriores) >= 2 else -1
+    lag3 = safe_get_duzia(anteriores[-3]) if len(anteriores) >= 3 else -1
 
-        features = [
-            atual % 2,
-            atual % 3,
-            int(str(atual)[-1]),
-            abs(atual - anteriores[-1]) if anteriores else 0,
-            int(atual == anteriores[-1]) if anteriores else 0,
-            1 if atual > anteriores[-1] else -1 if atual < anteriores[-1] else 0,
-            sum(1 for x in anteriores[-3:] if grupo == safe_get_duzia(x)),
-            Counter(numeros[-30:]).get(atual, 0),
-            int(atual in [n for n, _ in Counter(numeros[-30:]).most_common(5)]),
-            int(np.mean(anteriores) < atual),
-            int(atual == 0),
+    # Últimos 3 valores crus
+    val1 = anteriores[-1] if len(anteriores) >= 1 else 0
+    val2 = anteriores[-2] if len(anteriores) >= 2 else 0
+    val3 = anteriores[-3] if len(anteriores) >= 3 else 0
 
-            grupo,
+    # Tendência
+    tendencia = 0
+    if len(anteriores) >= 3:
+        diffs = np.diff(anteriores[-3:])
+        tendencia = int(np.mean(diffs) > 0) - int(np.mean(diffs) < 0)
 
-            freq_20.get(grupo, 0),
-            freq_50.get(grupo, 0),
+    # Zeros nos últimos 50
+    zeros_50 = numeros[-50:].count(0)
+    porc_zeros = zeros_50 / 50
 
-            lag1,
-            lag2,
-            lag3,
-        ]
-        return features
+    # Densidade da dúzia atual no histórico recente
+    densidade_20 = freq_20.get(grupo, 0)
+    densidade_50 = freq_50.get(grupo, 0)
+    rel_freq_grupo = densidade_50 / total_50
+
+    # Repetição de dúzia
+    repete_duzia = int(grupo == safe_get_duzia(anteriores[-1])) if anteriores else 0
+
+    features = [
+        atual % 2,                     # par ou ímpar
+        atual % 3,                     # divisível por 3
+        int(str(atual)[-1]),          # último dígito
+        abs(atual - anteriores[-1]) if anteriores else 0,  # diferença com anterior
+        int(atual == anteriores[-1]) if anteriores else 0, # repetiu número
+        1 if atual > anteriores[-1] else -1 if atual < anteriores[-1] else 0,  # direção
+        sum(1 for x in anteriores[-3:] if grupo == safe_get_duzia(x)),        # repetições de dúzia nos últimos 3
+        Counter(numeros[-30:]).get(atual, 0),                                  # frequência do número nos últimos 30
+        int(atual in [n for n, _ in Counter(numeros[-30:]).most_common(5)]),  # está entre os 5 mais comuns
+        int(np.mean(anteriores) < atual),                                     # acima da média
+        int(atual == 0),  # é zero
+        grupo,            # classe alvo para supervisão (duplicada como feature)
+
+        # Novas features
+        densidade_20,
+        densidade_50,
+        rel_freq_grupo,
+        repete_duzia,
+        tendencia,
+        lag1,
+        lag2,
+        lag3,
+        val1,
+        val2,
+        val3,
+        porc_zeros
+    ]
+
+    return features
+
+   
 
     def treinar(self, historico):
         numeros = [h["number"] for h in historico if isinstance(h["number"], int) and 0 <= h["number"] <= 36]
