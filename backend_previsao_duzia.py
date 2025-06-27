@@ -10,7 +10,6 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from pywebpush import webpush, WebPushException
 from captura_api import fetch_latest_result  # Certifique-se de que este arquivo está presente
-from contextlib import asynccontextmanager  # <== ADICIONADO para lifespan
 
 # === Firebase ===
 FIREBASE_COLLECTION = "resultados_duzia"
@@ -28,35 +27,13 @@ try:
             print("[FIREBASE] Inicializado com arquivo local.")
         firebase_admin.initialize_app(cred)
 
-    firebase_db = firestore.client()
+    firebase_db = firestore.client()  # <- Agora sempre será atribuído
     print("[FIREBASE] Conectado ao Firebase com sucesso.")
 except Exception as e:
     print(f"[ERRO] Falha ao conectar ao Firebase: {e}")
 
-# === Lifespan ===
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global historico_global, modelo_global
-    historico_global = carregar_historico()
-    validos = [h for h in historico_global if isinstance(h["number"], int)]
-    if len(validos) >= 25:
-        try:
-            if os.path.exists(MODELO_PATH):
-                modelo_global = joblib.load(MODELO_PATH)
-                modelo_global.treinado = True
-                print("[IA] Modelo carregado de disco.")
-            else:
-                modelo_global.treinar(validos)
-                print("[IA] Modelo treinado novo.")
-        except Exception as e:
-            print(f"[ERRO] Falha ao carregar modelo: {e}")
-    else:
-        print(f"[ERRO] Histórico insuficiente. Apenas {len(validos)} registros válidos.")
-    asyncio.create_task(loop_captura_automatica())
-    yield
-
 # === FastAPI ===
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/")
@@ -64,7 +41,7 @@ def home():
     return {"status": "API de previsão de dúzia ativa!"}
 
 # === Push Notification ===
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "SUA_CHAVE_PRIVADA_AQUI")
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "SUA_CHAVE_PRIVADA_AQUI")  # Atualize se necessário
 
 @app.post("/api/salvar-inscricao")
 async def salvar_inscricao(request: Request):
@@ -318,7 +295,7 @@ def ver_historico():
         raise HTTPException(status_code=500, detail=f"Erro ao ler histórico: {str(e)}")
 
 # === Loop automático ===
-    async def loop_captura_automatica():
+async def loop_captura_automatica():
     global historico_global, ultima_previsao, modelo_global
     while True:
         print("[AUTO] Capturando resultado automaticamente...")
@@ -335,6 +312,27 @@ def ver_historico():
                     enviar_push_para_todos(f"Dúzia prevista: {nova}")
                     ultima_previsao = nova
         await asyncio.sleep(60)
+
+# === Evento de startup unificado ===
+@app.on_event("startup")
+async def on_startup():
+    global historico_global, modelo_global
+    historico_global = carregar_historico()
+    validos = [h for h in historico_global if isinstance(h["number"], int)]
+    if len(validos) >= 25:
+        try:
+            if os.path.exists(MODELO_PATH):
+                modelo_global = joblib.load(MODELO_PATH)
+                modelo_global.treinado = True
+                print("[IA] Modelo carregado de disco.")
+            else:
+                modelo_global.treinar(validos)
+                print("[IA] Modelo treinado novo.")
+        except Exception as e:
+            print(f"[ERRO] Falha ao carregar modelo: {e}")
+    else:
+        print(f"[ERRO] Histórico insuficiente. Apenas {len(validos)} registros válidos.")
+    asyncio.create_task(loop_captura_automatica())
 
 # === Execução local ===
 if __name__ == "__main__":
