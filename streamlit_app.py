@@ -3,13 +3,11 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import numpy as np
 import joblib
-import json
 
-# Inicializa Firebase usando secrets do Streamlit
+# Inicializa Firebase usando st.secrets direto (sem json.loads)
 @st.cache_resource
 def init_firebase():
-    cred_dict = json.loads(st.secrets["firebase_key"])
-    cred = credentials.Certificate(cred_dict)
+    cred = credentials.Certificate(st.secrets["firebase_key"])
     firebase_admin.initialize_app(cred)
     return firestore.client()
 
