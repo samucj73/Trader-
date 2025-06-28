@@ -5,14 +5,13 @@ import numpy as np
 import joblib
 import json
 
-# Inicializa Firebase com parsing robusto do secret
 @st.cache_resource
 def init_firebase():
     key_secret = st.secrets["firebase_key"]
-    if isinstance(key_secret, dict):
-        cred_dict = key_secret
-    else:
+    if isinstance(key_secret, str):
         cred_dict = json.loads(key_secret)
+    else:
+        cred_dict = key_secret
     cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
     return firestore.client()
@@ -38,11 +37,9 @@ def prever_duzia(modelo, ultimos_numeros):
 st.set_page_config(page_title="Previsão de Dúzia", layout="centered")
 st.title("🎰 Previsão de Dúzia na Roleta")
 
-# Inicializações
 db = init_firebase()
 modelo = load_model()
 
-# Coleta dados do Firestore
 docs = db.collection("resultados") \
          .order_by("timestamp", direction=firestore.Query.DESCENDING) \
          .limit(20) \
