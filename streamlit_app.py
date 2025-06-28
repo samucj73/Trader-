@@ -4,6 +4,7 @@ from firebase_admin import credentials, firestore
 import numpy as np
 import joblib
 import json
+import copy
 
 @st.cache_resource
 def init_firebase():
@@ -11,8 +12,7 @@ def init_firebase():
     if isinstance(key_secret, str):
         cred_dict = json.loads(key_secret)
     else:
-        cred_dict = key_secret
-    # Corrige quebras de linha no private_key
+        cred_dict = copy.deepcopy(key_secret)  # copia para poder alterar sem erro
     if "private_key" in cred_dict:
         cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
     cred = credentials.Certificate(cred_dict)
