@@ -4,7 +4,15 @@ from firebase_admin import credentials, firestore
 import numpy as np
 import joblib
 import json
-import copy
+
+def to_plain_dict(secret_obj):
+    import collections.abc
+    if isinstance(secret_obj, dict) or isinstance(secret_obj, collections.abc.Mapping):
+        return {k: to_plain_dict(v) for k, v in secret_obj.items()}
+    elif isinstance(secret_obj, list):
+        return [to_plain_dict(x) for x in secret_obj]
+    else:
+        return secret_obj
 
 @st.cache_resource
 def init_firebase():
@@ -12,7 +20,7 @@ def init_firebase():
     if isinstance(key_secret, str):
         cred_dict = json.loads(key_secret)
     else:
-        cred_dict = copy.deepcopy(key_secret)  # copia para poder alterar sem erro
+        cred_dict = to_plain_dict(key_secret)
     if "private_key" in cred_dict:
         cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
     cred = credentials.Certificate(cred_dict)
