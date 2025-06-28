@@ -27,12 +27,11 @@ try:
             print("[FIREBASE] Inicializado com arquivo local.")
         firebase_admin.initialize_app(cred)
 
-    firebase_db = firestore.client()  # <- Agora sempre será atribuído
+    firebase_db = firestore.client()
     print("[FIREBASE] Conectado ao Firebase com sucesso.")
 except Exception as e:
     print(f"[ERRO] Falha ao conectar ao Firebase: {e}")
 
-# === FastAPI ===
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -40,8 +39,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 def home():
     return {"status": "API de previsão de dúzia ativa!"}
 
-# === Push Notification ===
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "SUA_CHAVE_PRIVADA_AQUI")  # Atualize se necessário
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "SUA_CHAVE_PRIVADA_AQUI")
 
 @app.post("/api/salvar-inscricao")
 async def salvar_inscricao(request: Request):
@@ -92,11 +90,9 @@ def enviar_teste():
     enviar_push_para_todos("🧪 Esta é uma notificação de teste.")
     return {"status": "ok"}
 
-# === Arquivos locais ===
 HISTORICO_PATH = "historico_coluna_duzia.json"
 MODELO_PATH = "modelo_duzia.joblib"
 
-# === IA ===
 def to_python(obj):
     if isinstance(obj, np.generic):
         return obj.item()
@@ -242,7 +238,6 @@ def carregar_historico():
                 for dado in dados:
                     if isinstance(dado.get("number"), int) and 0 <= dado["number"] <= 36 and "timestamp" in dado:
                         registros.append(dado)
-
         visto = set()
         historico_filtrado = []
         for r in registros:
@@ -251,7 +246,6 @@ def carregar_historico():
                 historico_filtrado.append(r)
         print(f"[HISTÓRICO] Registros válidos carregados: {len(historico_filtrado)}")
         return historico_filtrado
-
     except Exception as e:
         print(f"[ERRO] Falha ao carregar histórico: {e}")
         return []
@@ -294,7 +288,7 @@ def ver_historico():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao ler histórico: {str(e)}")
 
-# === Loop automático ===
+# ✅ Loop com re-treinamento a cada 5 novos registros
 async def loop_captura_automatica():
     global historico_global, ultima_previsao, modelo_global
     while True:
@@ -305,15 +299,17 @@ async def loop_captura_automatica():
             novo_historico = carregar_historico()
             validos = [h for h in novo_historico if isinstance(h["number"], int)]
             if len(novo_historico) != len(historico_global):
-                modelo_global.treinar(novo_historico)
+                diferenca = len(novo_historico) - len(historico_global)
                 historico_global = novo_historico
+                if diferenca >= 5:
+                    print(f"[IA] {diferenca} novos resultados capturados. Re-treinando o modelo...")
+                    modelo_global.treinar(historico_global)
                 nova = modelo_global.prever(historico_global)
                 if nova and nova != ultima_previsao:
                     enviar_push_para_todos(f"Dúzia prevista: {nova}")
                     ultima_previsao = nova
         await asyncio.sleep(60)
 
-# === Evento de startup unificado ===
 @app.on_event("startup")
 async def on_startup():
     global historico_global, modelo_global
@@ -334,7 +330,6 @@ async def on_startup():
         print(f"[ERRO] Histórico insuficiente. Apenas {len(validos)} registros válidos.")
     asyncio.create_task(loop_captura_automatica())
 
-# === Execução local ===
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
