@@ -12,6 +12,9 @@ def init_firebase():
         cred_dict = json.loads(key_secret)
     else:
         cred_dict = key_secret
+    # Corrige quebras de linha no private_key
+    if "private_key" in cred_dict:
+        cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
     cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
     return firestore.client()
