@@ -5,24 +5,10 @@ import numpy as np
 import joblib
 import json
 
-def to_plain_dict(secret_obj):
-    import collections.abc
-    if isinstance(secret_obj, dict) or isinstance(secret_obj, collections.abc.Mapping):
-        return {k: to_plain_dict(v) for k, v in secret_obj.items()}
-    elif isinstance(secret_obj, list):
-        return [to_plain_dict(x) for x in secret_obj]
-    else:
-        return secret_obj
-
 @st.cache_resource
 def init_firebase():
-    key_secret = st.secrets["firebase_key"]
-    if isinstance(key_secret, str):
-        cred_dict = json.loads(key_secret)
-    else:
-        cred_dict = to_plain_dict(key_secret)
-    if "private_key" in cred_dict:
-        cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
+    key_json_str = st.secrets["firebase_key_json"]
+    cred_dict = json.loads(key_json_str)
     cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
     return firestore.client()
@@ -55,6 +41,7 @@ docs = db.collection("resultados") \
          .order_by("timestamp", direction=firestore.Query.DESCENDING) \
          .limit(20) \
          .stream()
+
 resultados = [doc.to_dict() for doc in docs]
 resultados.sort(key=lambda x: x["timestamp"])
 numeros = [r["number"] for r in resultados]
