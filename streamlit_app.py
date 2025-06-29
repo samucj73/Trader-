@@ -1,49 +1,43 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-import json
 import joblib
 import pandas as pd
 import os
 
 st.set_page_config(page_title="Previsão de Dúzia - Roleta IA", layout="centered")
 
-# === Firebase via secrets ===
+# === Inicializar Firebase corretamente ===
 @st.cache_resource
 def init_firebase():
-    firebase_key = st.secrets["firebase_key_json"]
+    # Corrige o erro forçando a conversão para dict
+    firebase_key_dict = dict(st.secrets["firebase_key_json"])
+
     if not firebase_admin._apps:
-        cred = credentials.Certificate(firebase_key)
+        cred = credentials.Certificate(firebase_key_dict)
         firebase_admin.initialize_app(cred)
     return firestore.client()
 
-# === Carregar modelo IA ===
+# === Carrega modelo IA ===
 @st.cache_resource
 def carregar_modelo():
-    caminho_modelo = "modelo_duzia.pkl"
-    if not os.path.exists(caminho_modelo):
-        raise FileNotFoundError("Arquivo modelo_duzia.pkl não encontrado!")
-    return joblib.load(caminho_modelo)
+    caminho = "modelo_duzia.pkl"
+    if not os.path.exists(caminho):
+        raise FileNotFoundError("❌ Arquivo 'modelo_duzia.pkl' não encontrado.")
+    return joblib.load(caminho)
 
 # === App principal ===
 st.title("🎰 Previsão de Dúzia - Roleta IA")
 
 try:
-    st.write("🔌 Conectando ao Firebase...")
     db = init_firebase()
-
-    st.write("🧠 Carregando modelo IA...")
     modelo = carregar_modelo()
 
     st.write("📊 Buscando últimos resultados...")
     colecao = db.collection("resultados").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(20)
     docs = colecao.stream()
 
-    historico = []
-    for doc in docs:
-        data = doc.to_dict()
-        if "number" in data:
-            historico.append(data["number"])
+    historico = [doc.to_dict()["number"] for doc in docs if "number" in doc.to_dict()]
 
     if len(historico) < 10:
         st.warning("⚠️ Ainda não há dados suficientes para prever. Adicione pelo menos 10 resultados.")
@@ -52,9 +46,8 @@ try:
         predicao = modelo.predict(entrada)[0]
         st.success(f"🔮 Previsão da próxima dúzia: **{predicao}**")
 
-        # Mostrar histórico
         st.markdown("### 📌 Últimos números:")
         st.write(historico)
 
 except Exception as e:
-    st.error(f"❌ Erro ao rodar o aplicativo:\n\n`{e}`")
+    st.error(f"❌ Erro ao rodar o app:\n\n```\n{e}\n```")
